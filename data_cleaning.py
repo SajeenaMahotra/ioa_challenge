@@ -37,10 +37,10 @@ if 'age' in df.columns:
     df['age'] = pd.to_numeric(df['age'], errors='coerce')
     df.loc[(df['age'] < 13) | (df['age'] > 100), 'age'] = np.nan
 
-# 5. Clean hours_listened
-if 'hours_listened' in df.columns:
-    df['hours_listened'] = pd.to_numeric(df['hours_listened'], errors='coerce')
-    df.loc[(df['hours_listened'] < 0) | (df['hours_listened'] > 168), 'hours_listened'] = np.nan
+# 5. Clean avg_listening_hours_per_week
+if 'avg_listening_hours_per_week' in df.columns:
+    df['avg_listening_hours_per_week'] = pd.to_numeric(df['avg_listening_hours_per_week'], errors='coerce')
+    df.loc[(df['avg_listening_hours_per_week'] < 0) | (df['avg_listening_hours_per_week'] > 168), 'avg_listening_hours_per_week'] = np.nan
 
 # 6. Clean satisfaction_score
 if 'satisfaction_score' in df.columns:
@@ -48,12 +48,30 @@ if 'satisfaction_score' in df.columns:
     df.loc[(df['satisfaction_score'] < 1) | (df['satisfaction_score'] > 10), 'satisfaction_score'] = np.nan
 
 # 7. Standardize churn
-if 'churn' in df.columns:
-    df['churn'] = df['churn'].map({
-        'Yes': 1, 'yes': 1, 'YES': 1, 'Y': 1,
-        'No': 0, 'no': 0, 'NO': 0, 'N': 0,
-        1: 1, 0: 0, '1': 1, '0': 0
-    })
+for churn_col in ['churn', 'churned']:
+    if churn_col in df.columns:
+
+        # normalize text
+        df[churn_col] = df[churn_col].astype(str).str.lower().str.strip()
+
+        # handle messy yes/no strings ("00yes0", "nono", "yesno")
+        df[churn_col] = df[churn_col].apply(
+            lambda x: 1 if 'yes' in x else (0 if 'no' in x else x)
+        )
+
+        # final numeric conversion
+        df[churn_col] = pd.to_numeric(df[churn_col], errors='coerce')
+
+        # drop rows that are still invalid
+        df = df.dropna(subset=[churn_col])
+
+        df[churn_col] = df[churn_col].astype(int)
+
+        # rename to churned so analysis script works
+        df = df.rename(columns={churn_col: 'churned'})
+
+        break
+
 
 # 8. Clean date columns
 for col in ['date_joined', 'last_active']:
