@@ -42,12 +42,19 @@ if 'avg_listening_hours_per_week' in df.columns:
     df['avg_listening_hours_per_week'] = pd.to_numeric(df['avg_listening_hours_per_week'], errors='coerce')
     df.loc[(df['avg_listening_hours_per_week'] < 0) | (df['avg_listening_hours_per_week'] > 168), 'avg_listening_hours_per_week'] = np.nan
 
-# 6. Clean satisfaction_score
+
+# 6. Clean skip_rate
+if 'skip_rate' in df.columns:
+    df['skip_rate'] = df['skip_rate'].astype(str).str.replace('%', '', regex=False)
+    df['skip_rate'] = pd.to_numeric(df['skip_rate'], errors='coerce')
+    df['skip_rate'] = df['skip_rate'] / 100
+
+# 7. Clean satisfaction_score
 if 'satisfaction_score' in df.columns:
     df['satisfaction_score'] = pd.to_numeric(df['satisfaction_score'], errors='coerce')
     df.loc[(df['satisfaction_score'] < 1) | (df['satisfaction_score'] > 10), 'satisfaction_score'] = np.nan
 
-# 7. Standardize churn
+# 8. Standardize churn
 for churn_col in ['churn', 'churned']:
     if churn_col in df.columns:
 
@@ -73,15 +80,11 @@ for churn_col in ['churn', 'churned']:
         break
 
 
-# 8. Clean date columns
+# 9. Clean date columns
 for col in ['date_joined', 'last_active']:
     if col in df.columns:
         df[col] = pd.to_datetime(df[col], errors='coerce', infer_datetime_format=True)
-
-# 9. Standardize genre and device
-for col in ['favourite_genre', 'device']:
-    if col in df.columns:
-        df[col] = df[col].str.strip().str.title()
+ 
 
 # 10. Missing values summary
 missing = df.isnull().sum()

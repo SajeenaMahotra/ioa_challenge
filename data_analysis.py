@@ -84,7 +84,7 @@ print(f"Average Age: {churneded_users['age'].mean():.1f}")
 results = {
     'overall_churned_rate': churned_rate,
     'avg_satisfaction': avg_satisfaction,
-    'avg_avg_listening_hours_per_week': avg_hours,
+    'avg_listening_hours_per_week': avg_hours,
     'churneded_satisfaction': churneded_scores.mean(),
     'active_satisfaction': active_scores.mean(),
     'churneded_hours': churneded_hours,
