@@ -6,95 +6,86 @@ print("DATA CLEANING - DataWave Music Challenge")
 
 # Load dataset
 df = pd.read_csv('dataset/datawave_music.csv')
-print(f"Original dataset: {df.shape[0]} rows, {df.shape[1]} columns")
+print(f"Original dataset: {df.shape[0]} rows × {df.shape[1]} columns")
 
 os.makedirs('cleaned_data', exist_ok=True)
 
-# 1. Handle user IDs
-df = df.dropna(subset=['user_id'])
+# 1. Basic cleanup – user_id
+df = df.dropna(subset=['user_id'])                    # remove rows without ID
 df = df.drop_duplicates(subset=['user_id'], keep='first')
 
-# 2. Standardize country names
-if 'country' in df.columns:
-    df['country'] = df['country'].str.strip().str.title()
-    df['country'] = df['country'].replace({
-        'Usa': 'USA', 'United States': 'USA', 'United Kingdom': 'UK', 'Uk': 'UK'
-    })
+# 2. Standardize categorical columns
+# Country
+country_map = {'IND': 'India', 'UK': 'United Kingdom', 'U.K.': 'United Kingdom', 'USA': 'United States'}
+df['country'] = df['country'].replace(country_map)
 
-# 3. Standardize subscription types
-if 'subscription_type' in df.columns:
-    df['subscription_type'] = df['subscription_type'].str.strip().str.title()
-    df['subscription_type'] = df['subscription_type'].replace({
-        'Preminum': 'Premium', 'Premuim': 'Premium', 'Familly': 'Family', 'Studnet': 'Student'
-    })
+# Gender
+gender_map = {'M': 'Male', 'm': 'Male', 'male': 'Male',
+              'F': 'Female', 'f': 'Female', 'female': 'Female',
+              'Other': 'Other'}
+df['gender'] = df['gender'].map(gender_map).fillna('Unknown')
 
-# 4. Clean age
-if 'age' in df.columns:
-    df['age'] = df['age'].replace({
-        'ten': 10, 'twenty': 20, 'thirty': 30, 'forty': 40,
-        'fifty': 50, 'sixty': 60, 'seventy': 70
-    })
-    df['age'] = pd.to_numeric(df['age'], errors='coerce')
-    df.loc[(df['age'] < 13) | (df['age'] > 100), 'age'] = np.nan
+# Subscription type
+sub_map = {'Premum': 'Premium', 'Studnt': 'Student', 'Fam': 'Family'}
+df['subscription_type'] = df['subscription_type'].replace(sub_map)
 
-# 5. Clean avg_listening_hours_per_week
-if 'avg_listening_hours_per_week' in df.columns:
-    df['avg_listening_hours_per_week'] = pd.to_numeric(df['avg_listening_hours_per_week'], errors='coerce')
-    df.loc[(df['avg_listening_hours_per_week'] < 0) | (df['avg_listening_hours_per_week'] > 168), 'avg_listening_hours_per_week'] = np.nan
+# 3. Clean numeric columns
+# Age
+df['age'] = pd.to_numeric(df['age'], errors='coerce')
+df = df[df['age'].between(13, 100)]                     # realistic age range
 
+# Listening hours per week
+df['avg_listening_hours_per_week'] = pd.to_numeric(df['avg_listening_hours_per_week'], errors='coerce')
+df = df[df['avg_listening_hours_per_week'].between(0, 168)]
 
-# 6. Clean skip_rate
-if 'skip_rate' in df.columns:
-    df['skip_rate'] = df['skip_rate'].astype(str).str.replace('%', '', regex=False)
-    df['skip_rate'] = pd.to_numeric(df['skip_rate'], errors='coerce')
-    df['skip_rate'] = df['skip_rate'] / 100
+# Total songs played
+df['total_songs_played'] = pd.to_numeric(df['total_songs_played'], errors='coerce').astype('Int64')
 
-# 7. Clean satisfaction_score
-if 'satisfaction_score' in df.columns:
-    df['satisfaction_score'] = pd.to_numeric(df['satisfaction_score'], errors='coerce')
-    df.loc[(df['satisfaction_score'] < 1) | (df['satisfaction_score'] > 10), 'satisfaction_score'] = np.nan
+# Skip rate → convert to proportion (0–1)
+def clean_skip_rate(x):
+    if pd.isna(x): return np.nan
+    s = str(x).strip().lower()
+    if s == 'ten': return 0.10
+    if '%' in s:   return float(s.replace('%', '')) / 100
+    try:
+        return float(s)
+    except:
+        return np.nan
 
-# 8. Standardize churn
-for churn_col in ['churn', 'churned']:
-    if churn_col in df.columns:
+df['skip_rate'] = df['skip_rate'].apply(clean_skip_rate)
 
-        # normalize text
-        df[churn_col] = df[churn_col].astype(str).str.lower().str.strip()
+# Satisfaction score (1–5 scale in this dataset)
+df['satisfaction_score'] = pd.to_numeric(df['satisfaction_score'], errors='coerce')
+df['satisfaction_score'] = df['satisfaction_score'].fillna(df['satisfaction_score'].median())
 
-        # handle messy yes/no strings ("00yes0", "nono", "yesno")
-        df[churn_col] = df[churn_col].apply(
-            lambda x: 1 if 'yes' in x else (0 if 'no' in x else x)
-        )
+# 4. Churned → binary 0/1
+df['churned'] = df['churned'].astype(str).str.lower()
+df['churned'] = df['churned'].map({'yes': 1, 'no': 0, '1': 1, '0': 0}).fillna(0).astype(int)
 
-        # final numeric conversion
-        df[churn_col] = pd.to_numeric(df[churn_col], errors='coerce')
+# 5. Monthly fee
+df['monthly_fee'] = df['monthly_fee'].astype(str).str.replace(r'\s*USD$', '', regex=True)
+df['monthly_fee'] = pd.to_numeric(df['monthly_fee'], errors='coerce')
 
-        # drop rows that are still invalid
-        df = df.dropna(subset=[churn_col])
+# Impute missing fee using median per subscription type
+fee_medians = df.groupby('subscription_type')['monthly_fee'].median()
+df['monthly_fee'] = df.apply(
+    lambda row: fee_medians[row['subscription_type']] if pd.isna(row['monthly_fee']) else row['monthly_fee'],
+    axis=1
+)
 
-        df[churn_col] = df[churn_col].astype(int)
+# 6. Join date → datetime
+df['join_date'] = pd.to_datetime(df['join_date'], dayfirst=True, errors='coerce')
+df = df.dropna(subset=['join_date'])   # drop the very few unparseable dates
 
-        # rename to churned so analysis script works
-        df = df.rename(columns={churn_col: 'churned'})
+# 7. Final data types & summary
+df['age'] = df['age'].astype(int)
+df['satisfaction_score'] = df['satisfaction_score'].astype(int)
 
-        break
+# Missing values check (should be zero now)
+print("\nMissing values after cleaning:")
+print(df.isnull().sum()[df.isnull().sum() > 0])
 
-
-# 9. Clean date columns
-for col in ['date_joined', 'last_active']:
-    if col in df.columns:
-        df[col] = pd.to_datetime(df[col], errors='coerce', infer_datetime_format=True)
- 
-
-# 10. Missing values summary
-missing = df.isnull().sum()
-missing_pct = (missing / len(df)) * 100
-missing_df = pd.DataFrame({'Missing_Count': missing, 'Percentage': missing_pct})
-print(missing_df[missing_df['Missing_Count'] > 0])
-
-# Save cleaned dataset
-output_file = 'cleaned_data/datawave_cleaned.csv'
-df.to_csv(output_file, index=False)
-print(f"Cleaned dataset saved: {output_file}, Shape: {df.shape}")
-print("DATA CLEANING COMPLETE")
-
+# Save
+output_path = 'cleaned_data/datawave_cleaned.csv'
+df.to_csv(output_path, index=False)
+print(f"\nCleaning complete! Cleaned dataset saved to: {output_path}")
